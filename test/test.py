@@ -1,4 +1,4 @@
-if []:
-	print("full")
-else:
-	print("empty")
+x= 0
+
+y = int(not x)
+print(y)

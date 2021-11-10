@@ -7,6 +7,7 @@ import logging
 import shutil
 from pathlib import Path
 import random
+import os
 
 def check_free_sessions():
 	start = time.time()
@@ -29,20 +30,27 @@ def check_free_sessions():
 		if duration > 2:
 			return free_sessions
 
+
+
+
 async def download_media(
 		client: pyrogram.client.Client,
 		media_message: pyrogram.types.Message): 
-
-	download_path = await client.download_media(media_message)
+	try:
+		download_path = await client.download_media(media_message)
+	except AttributeError:
+		print("Song alredy exist in audio folder")
+		return None
 	return download_path
 
 
 
-def ask_for_media_and_download(session_string: str , uri: str):
+def ask_for_media_and_download(
+	config: dict,
+	session_string: str ,
+	 uri: str):
+	
 	logging.basicConfig(level = logging.INFO )
-
-	with open("config.json","r") as config_file:
-		config = json.load(config_file)
 
 	#BOT CHAT NAME 
 	chat_name = "spotify_down_bot" # access only via web
@@ -50,6 +58,9 @@ def ask_for_media_and_download(session_string: str , uri: str):
 	#CONNECT CLIENT
 	client = pyrogram.Client(session_string, config["api_id"], config["api_hash"]) 
 	client.start()
+
+	#TO SEE SESSION OWNER
+	client.get_me()
 
 	#CLEAN CHAT
 	'''
@@ -65,7 +76,6 @@ def ask_for_media_and_download(session_string: str , uri: str):
 
 	#LOOKING MESSAGES
 	messages = client.iter_history(chat_name, reverse = True)
-	
 	#GUARATEE MEDIA AVAILABLE
 	while(len(messages) < 6):
 		messages = client.iter_history(chat_name, reverse = True)
@@ -74,34 +84,72 @@ def ask_for_media_and_download(session_string: str , uri: str):
 
 	#DOWNLOAD SINGLE MEDIA
 	download_path = asyncio.get_event_loop().run_until_complete(download_media(client,messages[5]['audio']))
-	logging.info("Media available at : " + download_path)
-
+	
 	shutil.move(download_path,f'audio/{Path(download_path).name}')
+	final_path = os.getcwd() + f'/audio/{Path(download_path).name}'
+	logging.info("Media available at : " + final_path)
+
+	return final_path
 
 
+
+def set_session_state(config: dict, session_number: int):
+
+	#IF IT IS ZERO TURN TO ONE IF UT IS ONE TURN TO ZERO
+	config[str(session_number)] = int ( not config[str(session_number)] )
+	
+	with open("config.json", "w") as cfile:
+		json.dump(config, cfile, indent = 3 )
+
+
+
+
+#Main
 def single_download(uri: str):
+	with open("config.json","r") as config_file:
+		config = json.load(config_file)
 
 	if check_free_sessions():
 		session_selected = random.choice(check_free_sessions())
 		print(f'Session seleccionada: {session_selected}')
+		
+		#SET SESSION BUSSY
+		set_session_state(config, session_selected)
+		
+		with open(f'sessions/session{session_selected}.txt') as sfile:
+			session_string_selected = sfile.read()
 
-		ask_for_media_and_download(session_selected)
+		path = ask_for_media_and_download(config, session_string_selected, uri)
+
+		#SET SESSION READY
+		set_session_state(config, session_selected)
+
+		return path
 
 	else :
 		print("Can't download this song cause All API sessions are bussy")
+		return "All single download API sessions are bussy"
+
+
 
 if __name__ == "__main__":
-	single_download("/download spotify:track:6C62fl8x0vzwxPqay8twie")
-	# ask_for_media_and_download("/download spotify:track:6C62fl8x0vzwxPqay8twie")
-	#We can't use this method cause througth copyrigth error
-	#result = client.get_inline_bot_results(bot = chat_name, query = "/download spotify:track:6C62fl8x0vzwxPqay8twie")
-	#print(result)
+	with open("config.json","r") as config_file:
+		config = json.load(config_file)
+
+	with open(f'sessions/session3.txt') as sfile:
+			session_string_selected = sfile.read()
+
+	ask_for_media_and_download(config, session_string_selected ,"/download spotify:track:6C62fl8x0vzwxPqay8twie")
+	# set_session_state(config, 1)
+	# print(single_download("/download spotify:track:6eDImMU0RbxxTWqlEzpcom"))
+	# print(single_download("/download spotify:track:6C62fl8x0vzwxPqay8twie")
+	
 
 '''
 Tareas:
 
-	*Cambiar por session_string la conexion del cliente
-	*Agregar seteo de estados del descagador
+	*Cambiar por session_string la conexion del cliente x
+	*Agregar seteo de estados del descagador x
 	*Agregar CCU sincrono
 	
 Notas:

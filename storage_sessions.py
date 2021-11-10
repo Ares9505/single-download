@@ -39,7 +39,7 @@ def storage_session_data(old_session : bool = False):
 
 #FOR CHECK RIGHT STORAGE SESSION INFORMATION
 def use_session_string(session_number):
-	with open(f'sessions/session{session_number}.txt') as file:
+	with open(f'sessions/session{session_number}.txt', "r") as file:
 		session_string = file.read()
 
 	with open("config.json","r") as config_file:
@@ -48,11 +48,11 @@ def use_session_string(session_number):
 	client = pyrogram.Client(session_string, config["api_id"], config["api_hash"]) 
 	client.start()
 
-	print(client.get_me())
+	print(client.get_me().username)
 
 
 if __name__ == "__main__":
-	storage_session_data(old_session = False)
+	# storage_session_data(old_session = False)
 	use_session_string(3)
 
 '''
