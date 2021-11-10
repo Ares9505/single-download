@@ -36,11 +36,14 @@ def check_free_sessions():
 async def download_media(
 		client: pyrogram.client.Client,
 		media_message: pyrogram.types.Message): 
+	
 	try:
 		download_path = await client.download_media(media_message)
-	except AttributeError:
-		print("Song alredy exist in audio folder")
+	
+	except:
+		logging.warning(" download_media function error")
 		return None
+
 	return download_path
 
 
@@ -50,8 +53,6 @@ def ask_for_media_and_download(
 	session_string: str ,
 	 uri: str):
 	
-	logging.basicConfig(level = logging.INFO )
-
 	#BOT CHAT NAME 
 	chat_name = "spotify_down_bot" # access only via web
 
@@ -60,7 +61,7 @@ def ask_for_media_and_download(
 	client.start()
 
 	#TO SEE SESSION OWNER
-	client.get_me()
+	print(f'Username {client.get_me().username}')
 
 	#CLEAN CHAT
 	'''
@@ -76,21 +77,34 @@ def ask_for_media_and_download(
 
 	#LOOKING MESSAGES
 	messages = client.iter_history(chat_name, reverse = True)
+	
 	#GUARATEE MEDIA AVAILABLE
 	while(len(messages) < 6):
+		start = time.time()
+		
 		messages = client.iter_history(chat_name, reverse = True)
-		print(len(messages))
 		logging.info("Waiting for download available")
+		
+		end = time.time()
+
+		#MINIMUN TIME TO FIND SONG 
+		'''
+			We can't permanently get message history cause a error raise up
+		'''
+		if end - start > 2:
+			logging.warning("No song founded")
+			return "Error.No song founded"
+
 
 	#DOWNLOAD SINGLE MEDIA
 	download_path = asyncio.get_event_loop().run_until_complete(download_media(client,messages[5]['audio']))
+	
 	
 	shutil.move(download_path,f'audio/{Path(download_path).name}')
 	final_path = os.getcwd() + f'/audio/{Path(download_path).name}'
 	logging.info("Media available at : " + final_path)
 
 	return final_path
-
 
 
 def set_session_state(config: dict, session_number: int):
@@ -103,9 +117,11 @@ def set_session_state(config: dict, session_number: int):
 
 
 
-
 #Main
 def single_download(uri: str):
+	logging.basicConfig(level = logging.WARNING )
+
+
 	with open("config.json","r") as config_file:
 		config = json.load(config_file)
 
@@ -127,29 +143,29 @@ def single_download(uri: str):
 		return path
 
 	else :
-		print("Can't download this song cause All API sessions are bussy")
-		return "All single download API sessions are bussy"
+		logging.warning("Can't download this song cause all API sessions are bussy")
+		return "Error. All single download API sessions are bussy"
 
 
 
 if __name__ == "__main__":
-	with open("config.json","r") as config_file:
-		config = json.load(config_file)
+	# with open("config.json","r") as config_file:
+	# 	config = json.load(config_file)
 
-	with open(f'sessions/session3.txt') as sfile:
-			session_string_selected = sfile.read()
+	# with open(f'sessions/session3.txt') as sfile:
+	# 		session_string_selected = sfile.read()
 
-	ask_for_media_and_download(config, session_string_selected ,"/download spotify:track:6C62fl8x0vzwxPqay8twie")
+	# print(ask_for_media_and_download(config, session_string_selected ,"/download spotify:track:6C62fl8x0vzwxPqay8twie"))
 	# set_session_state(config, 1)
-	# print(single_download("/download spotify:track:6eDImMU0RbxxTWqlEzpcom"))
+	print(single_download("/download spotify:track:6eDImMU0RbxxTWqlEzpcom"))
 	# print(single_download("/download spotify:track:6C62fl8x0vzwxPqay8twie")
 	
 
 '''
 Tareas:
-
 	*Cambiar por session_string la conexion del cliente x
 	*Agregar seteo de estados del descagador x
+	*Agregar validacion de la uri
 	*Agregar CCU sincrono
 	
 Notas:
