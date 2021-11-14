@@ -1,4 +1,5 @@
 #pip install fastapi uvicorn
+
 from singleDownload import *
 
 from fastapi import FastAPI
@@ -17,3 +18,4 @@ def read_uri( uri: str):
 
 
 #tap uvicorn api:app --reload for start api
+#curl http://127.0.0.1:8000/spotify:track:6eDImMU0RbxxTWqlEzpcom

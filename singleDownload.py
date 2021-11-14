@@ -77,7 +77,7 @@ def ask_for_media_and_download(
 		'''
 			We can't permanently get message history cause a error raise up
 		'''
-		if end - start > 3:
+		if end - start > 4:
 			logging.warning("No song founded")
 			return "Error. No song foended"
 
@@ -85,6 +85,7 @@ def ask_for_media_and_download(
 	#DOWNLOAD SINGLE MEDIA
 	for i in range(3):
 		try:
+			time.sleep(1)
 			download_path = client.download_media(messages[5]['audio'])
 		except:
 			logging.info(f'Attemp {i+1} to download media')
