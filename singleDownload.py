@@ -65,28 +65,36 @@ def ask_for_media_and_download(
 	messages = client.iter_history(chat_name, reverse = True)
 	
 	#GUARATEE MEDIA AVAILABLE
-	while(len(messages) < 6):
+	no_media = True
+	while(no_media):
 		start = time.time()
 		
 		messages = client.iter_history(chat_name, reverse = True)
 		logging.info("Waiting for download available")
-		time.sleep(0.5)
+		time.sleep(1)
 		end = time.time()
+
+		if len(messages) == 6 :
+			#la edia aparece en el sms 4 o el 5
+			index = 4 if messages[4]['audio'] else 5
+			logging.info("Media available")
+			no_media = False
+
 
 		#MINIMUN TIME TO FIND SONG 
 		'''
 			We can't permanently get message history cause a error raise up
 		'''
-		if end - start > 4:
+		if end - start > 10 :
 			logging.warning("No song founded")
-			return "Error. No song foended"
+			return "Error. No song founded"
 
 
 	#DOWNLOAD SINGLE MEDIA
 	for i in range(3):
 		try:
 			time.sleep(1)
-			download_path = client.download_media(messages[5]['audio'])
+			download_path = client.download_media(messages[index]['audio'])
 		except:
 			logging.info(f'Attemp {i+1} to download media')
 			if i + 1 == 3:
