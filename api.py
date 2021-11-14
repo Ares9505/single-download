@@ -12,11 +12,8 @@ def read_root():
 
 @app.get("/{uri}")
 def read_uri( uri: str):
-	try:
-		response = single_download(uri)
-		return {"Path": response}
-	except:
-		return {"Path":"Single download API error"} 
-	
+	response = single_download(uri)
+	return {"Path": response}
+
 
 #tap uvicorn api:app --reload for start api

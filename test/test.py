@@ -1,4 +1,4 @@
 x= 0
 
-y = int(not x)
+y = not x
 print(y)

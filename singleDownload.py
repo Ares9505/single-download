@@ -32,27 +32,12 @@ def check_free_sessions():
 
 
 
-
-async def download_media(
-		client: pyrogram.client.Client,
-		media_message: pyrogram.types.Message): 
-	
-	try:
-		download_path = await client.download_media(media_message)
-	
-	except:
-		logging.warning(" download_media function error")
-		return None
-
-	return download_path
-
-
-
 def ask_for_media_and_download(
 	config: dict,
 	session_string: str ,
 	 uri: str):
 	
+
 	#BOT CHAT NAME 
 	chat_name = "spotify_down_bot" # access only via web
 
@@ -73,7 +58,8 @@ def ask_for_media_and_download(
 			client.delete_messages(chat_name,message.message_id)
 
 	# #SENDING URI
-	client.send_message(chat_name, uri)	
+	sms = "/download " + uri
+	client.send_message(chat_name, sms)	
 
 	#LOOKING MESSAGES
 	messages = client.iter_history(chat_name, reverse = True)
@@ -84,32 +70,42 @@ def ask_for_media_and_download(
 		
 		messages = client.iter_history(chat_name, reverse = True)
 		logging.info("Waiting for download available")
-		
+		time.sleep(0.5)
 		end = time.time()
 
 		#MINIMUN TIME TO FIND SONG 
 		'''
 			We can't permanently get message history cause a error raise up
 		'''
-		if end - start > 2:
+		if end - start > 3:
 			logging.warning("No song founded")
-			return "Error.No song founded"
+			return "Error. No song foended"
 
 
 	#DOWNLOAD SINGLE MEDIA
-	download_path = asyncio.get_event_loop().run_until_complete(download_media(client,messages[5]['audio']))
-	
-	
-	shutil.move(download_path,f'audio/{Path(download_path).name}')
-	final_path = os.getcwd() + f'/audio/{Path(download_path).name}'
-	logging.info("Media available at : " + final_path)
+	for i in range(3):
+		try:
+			download_path = client.download_media(messages[5]['audio'])
+		except:
+			logging.info(f'Attemp {i+1} to download media')
+			if i + 1 == 3:
+				logging.info("Media wasn't downloaded")
+				download_path = None
 
-	return final_path
+	if download_path:
+		shutil.move(download_path,f'audio/{Path(download_path).name}')
+		final_path = os.getcwd() + f'/audio/{Path(download_path).name}'
+		logging.info("Media available at : " + final_path)
+
+		return final_path
+
+	return "Error. Song not downloaded"
+
 
 
 def set_session_state(config: dict, session_number: int):
 
-	#IF IT IS ZERO TURN TO ONE IF UT IS ONE TURN TO ZERO
+	#IF IT IS ZERO TURN TO ONE IF IT IS ONE TURN TO ZERO
 	config[str(session_number)] = int ( not config[str(session_number)] )
 	
 	with open("config.json", "w") as cfile:
@@ -119,7 +115,7 @@ def set_session_state(config: dict, session_number: int):
 
 #Main
 def single_download(uri: str):
-	logging.basicConfig(level = logging.WARNING )
+	logging.basicConfig(level = logging.INFO )
 
 
 	with open("config.json","r") as config_file:
@@ -157,7 +153,7 @@ if __name__ == "__main__":
 
 	# print(ask_for_media_and_download(config, session_string_selected ,"/download spotify:track:6C62fl8x0vzwxPqay8twie"))
 	# set_session_state(config, 1)
-	print(single_download("/download spotify:track:6eDImMU0RbxxTWqlEzpcom"))
+	print(single_download("spotify:track:6eDImMU0RbxxTWqlEzpcom"))
 	# print(single_download("/download spotify:track:6C62fl8x0vzwxPqay8twie")
 	
 
