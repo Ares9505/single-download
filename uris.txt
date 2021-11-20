@@ -1,0 +1,2 @@
+curl --request GET "http://185.167.96.161:8000/spotify:album:6oRrfGcUeAwfX1
+lTdxZFFj"

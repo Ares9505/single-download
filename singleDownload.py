@@ -115,12 +115,16 @@ def ask_for_media_and_download(
 def set_session_state(config: dict, session_number: int):
 
 	#IF IT IS ZERO TURN TO ONE IF IT IS ONE TURN TO ZERO
+	''' Zero means free session One means bussy session'''
 	config[str(session_number)] = int ( not config[str(session_number)] )
 	
 	with open("config.json", "w") as cfile:
 		json.dump(config, cfile, indent = 3 )
 
 
+
+def query_database_for_pending_uri():
+	pass
 
 #Main
 def single_download(uri: str):
@@ -147,29 +151,31 @@ def single_download(uri: str):
 
 		return path
 
+
+
 	else :
 		logging.warning("Can't download this song cause all API sessions are bussy")
 		return "Error. All single download API sessions are bussy"
 
 
 
-if __name__ == "__main__":
-	# with open("config.json","r") as config_file:
-	# 	config = json.load(config_file)
 
-	# with open(f'sessions/session3.txt') as sfile:
-	# 		session_string_selected = sfile.read()
+if __name__ == "__main__":	
+	# print(single_download("spotify:track:6eDImMU0RbxxTWqlEzpcom"))
+	with open("config.json","r") as config_file:
+		config = json.load(config_file)
 
-	# print(ask_for_media_and_download(config, session_string_selected ,"/download spotify:track:6C62fl8x0vzwxPqay8twie"))
-	# set_session_state(config, 1)
-	print(single_download("spotify:track:6eDImMU0RbxxTWqlEzpcom"))
-	# print(single_download("/download spotify:track:6C62fl8x0vzwxPqay8twie")
-	
 
 '''
 Tareas:
-	*Cambiar por session_string la conexion del cliente x
+	*Cambiar por session_string la conexion del cliente x (storage_sessions.py)
 	*Agregar seteo de estados del descagador x
+	*Crear y llenar base de datos de prueba  x
+	*Consulta a base de datos para ver si hay uris pendientes 
+	*Descargar uri pendiente si hay alguna sesion desocupada
+	*Tener en cuenta uri con dos medias para descargar
+	*Instalar telegra desktop para checar envio de sms
+	*Llenar base de datos con path de la cancion descargada segun uri
 	*Agregar validacion de la uri
 	*Agregar CCU sincrono
 	

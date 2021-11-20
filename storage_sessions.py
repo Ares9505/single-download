@@ -48,12 +48,12 @@ def use_session_string(session_number):
 	client = pyrogram.Client(session_string, config["api_id"], config["api_hash"]) 
 	client.start()
 
-	print(client.get_me().username)
+	print(client.get_me().first_name)
 
 
 if __name__ == "__main__":
-	# storage_session_data(old_session = False)
-	use_session_string(3)
+	#storage_session_data(old_session = False)
+	use_session_string(5)
 
 '''
 	Tareas:
