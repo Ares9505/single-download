@@ -8,35 +8,26 @@ import shutil
 from pathlib import Path
 import random
 import os
+import pymongo
 
 def check_free_sessions():
-	start = time.time()
-	
-	no_session_free = True
-	
-	while no_session_free:
-
+	while True:
+		start = time.time()
 		with open("config.json","r") as file:
 			config = json.load(file)
-		
 		free_sessions = [i for i in range(1,config["session quantity"]+1) if config[str(i)] == 0]
-		
 		if free_sessions:
 			return free_sessions
-		
 		end = time.time()
-		duration =  end - start
-
-		if duration > 2:
+		duration = end - start
+		if duration > 18:
+			#In this case duration will be none
 			return free_sessions
-
-
-
+		
 def ask_for_media_and_download(
 	config: dict,
 	session_string: str ,
-	 uri: str):
-	
+	 uri_doc_id: str):	
 
 	#BOT CHAT NAME 
 	chat_name = "spotify_down_bot" # access only via web
@@ -58,7 +49,7 @@ def ask_for_media_and_download(
 			client.delete_messages(chat_name,message.message_id)
 
 	# #SENDING URI
-	sms = "/download " + uri
+	sms = "/download spotify:track:" + uri
 	client.send_message(chat_name, sms)	
 
 	#LOOKING MESSAGES
@@ -75,7 +66,7 @@ def ask_for_media_and_download(
 		end = time.time()
 
 		if len(messages) == 6 :
-			#la edia aparece en el sms 4 o el 5
+			#the media aparece en el sms 4 o el 5
 			index = 4 if messages[4]['audio'] else 5
 			logging.info("Media available")
 			no_media = False
@@ -111,7 +102,6 @@ def ask_for_media_and_download(
 	return "Error. Song not downloaded"
 
 
-
 def set_session_state(config: dict, session_number: int):
 
 	#IF IT IS ZERO TURN TO ONE IF IT IS ONE TURN TO ZERO
@@ -122,14 +112,9 @@ def set_session_state(config: dict, session_number: int):
 		json.dump(config, cfile, indent = 3 )
 
 
-
-def query_database_for_pending_uri():
-	pass
-
 #Main
 def single_download(uri: str):
 	logging.basicConfig(level = logging.INFO )
-
 
 	with open("config.json","r") as config_file:
 		config = json.load(config_file)
@@ -151,19 +136,90 @@ def single_download(uri: str):
 
 		return path
 
-
-
 	else :
 		logging.warning("Can't download this song cause all API sessions are bussy")
 		return "Error. All single download API sessions are bussy"
 
 
+def pending_uri(
+	collection: pymongo.collection.Collection
+	) -> dict:
+	'''
+		*Extract doc with mayor priority and state equal pending 
+		*Update doc extracted with state =  Procesing
+	'''	
 
+	uri_doc = collection.find_one({"state": "PENDING"},sort = [("priority",-1)])
+	print(uri_doc)
+	if uri_doc:
+		uri = uri_doc["uri"]
+		uri_doc_id = {"uri" : uri}
+		field_to_update = {"$set" : {"state": "PROCESING"}}
+		collection.update_one( uri_doc_id, field_to_update)
+		logger.info(f'Uri {uri_doc["uri"]} is being processed')
+	else:
+		uri = None
+		logger.info("In loop loocking for pending uri")
+	return uri
+
+
+
+def update_database(
+	collection: pymongo.collection.Collection
+	):
+	pass	
+	
+
+def getPath(session, uri):
+	time.sleep(3)
+	return f'/path/session{session}/{uri}'
 
 if __name__ == "__main__":	
 	# print(single_download("spotify:track:6eDImMU0RbxxTWqlEzpcom"))
+	
+	logging.basicConfig(level = logging.INFO )
+	logger = logging.getLogger("singleDownload")
+
 	with open("config.json","r") as config_file:
 		config = json.load(config_file)
+
+
+	while True:
+		session_free_list = check_free_sessions()
+		if session_free_list:
+			session_selected = random.choice(session_free_list)
+			logger.info(f'Session seleccionada: {session_selected}')
+			
+			logger.info("Connecting to MongoDB...")
+			client = pymongo.MongoClient(config['db_conection'])
+			collection = client[config['db_name']][config['collection_name']]
+			
+			uri = pending_uri(collection)
+
+			if uri:
+				
+				#SET SESSION BUSSY					
+				set_session_state(config, session_selected)
+
+
+				with open(f'sessions/session{session_selected}.txt') as sfile:
+					session_string_selected = sfile.read()
+
+				# path = ask_for_media_and_download(config, session_string_selected, uri)
+
+				path = getPath(session_selected,uri) 
+				
+				#SET SESSION READY
+				set_session_state(config, session_selected)
+
+
+			time.sleep(2)
+
+			for x in collection.find():
+		  		print(x)
+
+		
+
 
 
 '''
@@ -171,14 +227,18 @@ Tareas:
 	*Cambiar por session_string la conexion del cliente x (storage_sessions.py)
 	*Agregar seteo de estados del descagador x
 	*Crear y llenar base de datos de prueba  x
-	*Consulta a base de datos para ver si hay uris pendientes 
-	*Descargar uri pendiente si hay alguna sesion desocupada
+	*Consulta a base de datos para ver si hay uris pendientes y extraer la de mayor prioridad x
+	*Descargar uri pendiente si hay alguna sesion desocupada (Pendiente: Comprobar descarga)
+
+
 	*Tener en cuenta uri con dos medias para descargar
-	*Instalar telegra desktop para checar envio de sms
 	*Llenar base de datos con path de la cancion descargada segun uri
+	*Establecer lazo while true para que se cheque eternamente la base de  datos 
+	*Instalar telegra desktop para checar envio de sms
 	*Agregar validacion de la uri
 	*Agregar CCU sincrono
 	
 Notas:
-	*Checar cual seria un valor idoneo para duration en check free session
+	*Se debe cambiar en configuracion en config.json y poner la direccion para la conexion con la base de  datos,
+	el nobre de la base de datos y la conexion a la hora de integrar con rey
 '''
