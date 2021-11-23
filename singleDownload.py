@@ -214,7 +214,7 @@ if __name__ == "__main__":
 				set_session_state(config, session_selected)
 
 
-			time.sleep(3)
+			time.sleep(2)
 
 			for x in collection.find():
 		  		print(x)
