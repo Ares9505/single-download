@@ -27,7 +27,8 @@ def check_free_sessions():
 def ask_for_media_and_download(
 	config: dict,
 	session_string: str ,
-	 uri_doc_id: str):	
+	 uri: str,
+	 collection: pymongo.collection.Collection):	
 
 	#BOT CHAT NAME 
 	chat_name = "spotify_down_bot" # access only via web
@@ -37,7 +38,7 @@ def ask_for_media_and_download(
 	client.start()
 
 	#TO SEE SESSION OWNER
-	print(f'Username {client.get_me().username}')
+	logging.info(f'Username {client.get_me().username}')
 
 	#CLEAN CHAT
 	'''
@@ -58,8 +59,8 @@ def ask_for_media_and_download(
 	#GUARATEE MEDIA AVAILABLE
 	no_media = True
 	while(no_media):
+
 		start = time.time()
-		
 		messages = client.iter_history(chat_name, reverse = True)
 		logging.info("Waiting for download available")
 		time.sleep(1)
@@ -68,25 +69,24 @@ def ask_for_media_and_download(
 		if len(messages) == 6 :
 			#the media aparece en el sms 4 o el 5
 			index = 4 if messages[4]['audio'] else 5
-			logging.info("Media available")
+			logging.info(f'Media available. Title: {messages[index]['audio']['title']}')
 			no_media = False
-
 
 		#MINIMUN TIME TO FIND SONG 
 		'''
-			We can't permanently get message history cause a error raise up
+			We can't permanently get message history cause an error raise up
 		'''
-		if end - start > 10 :
-			logging.warning("No song founded")
-
-			return "Error. No song founded"
-
+		if end - start > 10:
+			logging.warning(f'Error. No song founded for {uri}')
+			update_database(collection, uri, state = "ERROR", path = "ERROR")
+			return
 
 	#DOWNLOAD SINGLE MEDIA
 	for i in range(3):
 		try:
 			time.sleep(1)
 			download_path = client.download_media(messages[index]['audio'])
+			logging.info("Downloading media")
 		except:
 			logging.info(f'Attemp {i+1} to download media')
 			if i + 1 == 3:
@@ -97,10 +97,13 @@ def ask_for_media_and_download(
 		shutil.move(download_path,f'audio/{Path(download_path).name}')
 		final_path = os.getcwd() + f'/audio/{Path(download_path).name}'
 		logging.info("Media available at : " + final_path)
+		update_database(collection, "OK", final_path)
+		return
 
-		return final_path
-
-	return "Error. Song not downloaded"
+	else:
+		update_database(collection, uri, state = "ERROR", path ="ERROR")
+		logging.info("Error during media download.")
+		return
 
 
 def set_session_state(config: dict, session_number: int):
@@ -113,7 +116,6 @@ def set_session_state(config: dict, session_number: int):
 		json.dump(config, cfile, indent = 3 )
 
 
-#Main
 def single_download(uri: str):
 	logging.basicConfig(level = logging.INFO )
 
@@ -151,33 +153,33 @@ def pending_uri(
 	'''	
 
 	uri_doc = collection.find_one({"state": "PENDING"},sort = [("priority",-1)])
-	print(uri_doc)
+
 	if uri_doc:
 		uri = uri_doc["uri"]
 		uri_doc_id = {"uri" : uri}
 		field_to_update = {"$set" : {"state": "PROCESING"}}
 		collection.update_one( uri_doc_id, field_to_update)
-		logger.info(f'Uri {uri_doc["uri"]} is being processed')
+		logging.info(f'Uri {uri} is being processed')
+	
 	else:
 		uri = None
-		logger.info("In loop loocking for pending uri")
+		logging.info("In loop, loocking for pending uri")
 	return uri
 
 
 
 def update_database(
-	collection: pymongo.collection.Collection
-	):
-	pass	
-	
+	collection: pymongo.collection.Collection,
+	uri: str,
+	state: str,
+	path: str ):
 
-def getPath(session, uri):
-	time.sleep(3)
-	return f'/path/session{session}/{uri}'
+	field_to_update = {"$set" : {"state": state, "path": path}}
+	collection.update_one( {"uri" : uri } , field_to_update)
 
-if __name__ == "__main__":	
-	# print(single_download("spotify:track:6eDImMU0RbxxTWqlEzpcom"))
-	
+
+#MAIN
+def singleDownload():
 	logging.basicConfig(level = logging.INFO )
 	logger = logging.getLogger("singleDownload")
 
@@ -185,42 +187,43 @@ if __name__ == "__main__":
 		config = json.load(config_file)
 
 
-	while True:
+	logger.info("Connecting to MongoDB...")
+	client = pymongo.MongoClient(config['db_conection'])
+	collection = client[config['db_name']][config['collection_name']]			
+	
+	condition =True		
+	while condition:
 		session_free_list = check_free_sessions()
 		if session_free_list:
 			session_selected = random.choice(session_free_list)
 			logger.info(f'Session seleccionada: {session_selected}')
-			
-			logger.info("Connecting to MongoDB...")
-			client = pymongo.MongoClient(config['db_conection'])
-			collection = client[config['db_name']][config['collection_name']]
-			
+		
 			uri = pending_uri(collection)
-
+			print(uri)
 			if uri:
 				
 				#SET SESSION BUSSY					
 				set_session_state(config, session_selected)
 
-
 				with open(f'sessions/session{session_selected}.txt') as sfile:
 					session_string_selected = sfile.read()
 
-				# path = ask_for_media_and_download(config, session_string_selected, uri)
-
-				path = getPath(session_selected,uri) 
-				
+				path = ask_for_media_and_download(config, session_string_selected, uri,collection)
+							
 				#SET SESSION READY
 				set_session_state(config, session_selected)
 
 
 			time.sleep(2)
 
-			for x in collection.find():
-		  		print(x)
-# https://github.com/Ares9505/single-download.git
-		
 
+		condition = False	
+
+
+
+if __name__ == "__main__":	
+	# print(single_download("spotify:track:1BLfQ6dPXmuDrFmbdfW7Jl"))
+	singleDownload()
 
 
 '''
@@ -229,12 +232,12 @@ Tareas:
 	*Agregar seteo de estados del descagador x
 	*Crear y llenar base de datos de prueba  x
 	*Consulta a base de datos para ver si hay uris pendientes y extraer la de mayor prioridad x
-	*Descargar uri pendiente si hay alguna sesion desocupada (Pendiente: Comprobar descarga)
+	*Descargar uri pendiente si hay alguna sesion desocupada x
+	*Tener en cuenta uri con dos medias para descargar (Esto no ocurre nunca)
+	*Establecer lazo while true para que se chequee eternamente la base de  datos x
+	*Hacer funcion que actualice la base de datos (Pendiente)
 
-
-	*Tener en cuenta uri con dos medias para descargar
 	*Llenar base de datos con path de la cancion descargada segun uri
-	*Establecer lazo while true para que se cheque eternamente la base de  datos 
 	*Instalar telegra desktop para checar envio de sms
 	*Agregar validacion de la uri
 	*Agregar CCU sincrono
