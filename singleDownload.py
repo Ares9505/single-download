@@ -78,6 +78,7 @@ def ask_for_media_and_download(
 		'''
 		if end - start > 10 :
 			logging.warning("No song founded")
+
 			return "Error. No song founded"
 
 
@@ -213,11 +214,11 @@ if __name__ == "__main__":
 				set_session_state(config, session_selected)
 
 
-			time.sleep(2)
+			time.sleep(3)
 
 			for x in collection.find():
 		  		print(x)
-
+# https://github.com/Ares9505/single-download.git
 		
 
 
