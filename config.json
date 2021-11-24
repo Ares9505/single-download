@@ -4,10 +4,11 @@
    "db_conection": "mongodb://localhost:27017/",
    "db_name": "mydatabase",
    "collection_name": "uri_state",
-   "session quantity": 5,
+   "session quantity": 6,
    "1": 1,
    "2": 1,
    "3": 0,
    "4": 1,
-   "5": 1
+   "5": 1,
+   "6": 0
 }
