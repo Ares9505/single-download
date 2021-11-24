@@ -53,7 +53,7 @@ def use_session_string(session_number):
 
 if __name__ == "__main__":
 	storage_session_data(old_session = False)
-	#use_session_string(1)
+	#use_session_string(6)
 
 '''
 	Tareas:
