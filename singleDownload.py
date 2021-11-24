@@ -38,7 +38,7 @@ def ask_for_media_and_download(
 	client.start()
 
 	#TO SEE SESSION OWNER
-	logging.info(f'Username {client.get_me().username}')
+	logging.info(f'First_name {client.get_me().first_name}')
 
 	#CLEAN CHAT
 	'''
@@ -58,35 +58,41 @@ def ask_for_media_and_download(
 	
 	#GUARATEE MEDIA AVAILABLE
 	no_media = True
+	start = time.time()
 	while(no_media):
-
-		start = time.time()
 		messages = client.iter_history(chat_name, reverse = True)
 		logging.info("Waiting for download available")
-		time.sleep(1)
-		end = time.time()
+		time.sleep(2)
+		
+		if len(messages) ==5:
+			if messages[4].text == "🚫El URI que enviaste es inválido":
+				logging.warning(f'Error. {uri} no valido')
+				update_database(collection, uri, state = "ERROR", path = "Uri no valido")
+				return
 
 		if len(messages) == 6 :
 			#the media aparece en el sms 4 o el 5
 			index = 4 if messages[4]['audio'] else 5
-			logging.info(f'Media available. Title: {messages[index]['audio']['title']}')
+			logging.info(f'Media available. Title: {messages[index]["audio"]["title"]}')
 			no_media = False
 
+		end = time.time()
 		#MINIMUN TIME TO FIND SONG 
 		'''
 			We can't permanently get message history cause an error raise up
 		'''
-		if end - start > 10:
-			logging.warning(f'Error. No song founded for {uri}')
-			update_database(collection, uri, state = "ERROR", path = "ERROR")
+		if end - start > 12:
+			logging.warning(f'Error. Timeout waiting available download for {uri}')
+			update_database(collection, uri, state = "ERROR", path = "Timeout (10s) for waiting available download")
 			return
 
 	#DOWNLOAD SINGLE MEDIA
 	for i in range(3):
 		try:
-			time.sleep(1)
+			time.sleep(2)
 			download_path = client.download_media(messages[index]['audio'])
 			logging.info("Downloading media")
+			break
 		except:
 			logging.info(f'Attemp {i+1} to download media')
 			if i + 1 == 3:
@@ -94,16 +100,17 @@ def ask_for_media_and_download(
 				download_path = None
 
 	if download_path:
-		shutil.move(download_path,f'audio/{Path(download_path).name}')
-		final_path = os.getcwd() + f'/audio/{Path(download_path).name}'
+		shutil.move(download_path,f'audio/1{Path(download_path).name}')
+		final_path = os.getcwd() + f'/audio/1{Path(download_path).name}'
 		logging.info("Media available at : " + final_path)
-		update_database(collection, "OK", final_path)
+		update_database(collection, uri, "OK", final_path)
 		return
 
 	else:
-		update_database(collection, uri, state = "ERROR", path ="ERROR")
+		update_database(collection, uri, state = "ERROR", path ="Error occur in media download ")
 		logging.info("Error during media download.")
 		return
+	return
 
 
 def set_session_state(config: dict, session_number: int):
@@ -153,7 +160,7 @@ def pending_uri(
 	'''	
 
 	uri_doc = collection.find_one({"state": "PENDING"},sort = [("priority",-1)])
-
+	print(uri_doc)
 	if uri_doc:
 		uri = uri_doc["uri"]
 		uri_doc_id = {"uri" : uri}
@@ -165,7 +172,6 @@ def pending_uri(
 		uri = None
 		logging.info("In loop, loocking for pending uri")
 	return uri
-
 
 
 def update_database(
@@ -188,7 +194,9 @@ def singleDownload():
 
 
 	logger.info("Connecting to MongoDB...")
+
 	client = pymongo.MongoClient(config['db_conection'])
+
 	collection = client[config['db_name']][config['collection_name']]			
 	
 	condition =True		
@@ -220,7 +228,6 @@ def singleDownload():
 		condition = False	
 
 
-
 if __name__ == "__main__":	
 	# print(single_download("spotify:track:1BLfQ6dPXmuDrFmbdfW7Jl"))
 	singleDownload()
@@ -235,10 +242,15 @@ Tareas:
 	*Descargar uri pendiente si hay alguna sesion desocupada x
 	*Tener en cuenta uri con dos medias para descargar (Esto no ocurre nunca)
 	*Establecer lazo while true para que se chequee eternamente la base de  datos x
-	*Hacer funcion que actualice la base de datos (Pendiente)
+	*Hacer funcion que actualice la base de datos con los estados debidos x
+	*Instalar telegra desktop para checar envio de sms x
+	*Conectar con la base de datos de dayron (necesario descargar compass) x
 
+
+	*a;adir descarga asincronica por session
 	*Llenar base de datos con path de la cancion descargada segun uri
-	*Instalar telegra desktop para checar envio de sms
+	*Instalar compass y unirme a base de datos de servidor
+	() 
 	*Agregar validacion de la uri
 	*Agregar CCU sincrono
 	

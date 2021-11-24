@@ -1,6 +1,6 @@
 import pyrogram
 import json
-
+import jsonpickle
 
 def storage_session_data(old_session : bool = False):
 	'''
@@ -13,8 +13,8 @@ def storage_session_data(old_session : bool = False):
 		config = json.load(config_file)
 
 	#DEFINING SESSION NUMBER FROM SESSION QUANTITY
-	config['sessions quantity'] += 1
-	session_number = config['sessions quantity']  
+	config['session quantity'] += 1
+	session_number = config['session quantity']  
 
 	#DEFINING SESSION STORAGE KIND (old session or new from used in DCCU)
 	account = "media_downloader" if old_session else ":memory:"
@@ -49,11 +49,11 @@ def use_session_string(session_number):
 	client.start()
 
 	print(client.get_me().first_name)
-
+	
 
 if __name__ == "__main__":
 	#storage_session_data(old_session = False)
-	use_session_string(5)
+	use_session_string(1)
 
 '''
 	Tareas:
