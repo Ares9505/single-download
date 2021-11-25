@@ -9,12 +9,22 @@ from pathlib import Path
 import random
 import os
 import pymongo
+import multiprocessing
+from erase_collection import erase
+from filldatabase import fill
 
 def check_free_sessions():
 	while True:
 		start = time.time()
-		with open("config.json","r") as file:
-			config = json.load(file)
+		for i in range(1,20):
+			try:
+				with open("config.json","r") as file:			
+					config = json.load(file)
+			
+			except:
+				print("Config json error")
+				time.sleep(1)
+
 		free_sessions = [i for i in range(1,config["session quantity"]+1) if config[str(i)] == 0]
 		if free_sessions:
 			return free_sessions
@@ -25,6 +35,7 @@ def check_free_sessions():
 			return free_sessions
 		
 def ask_for_media_and_download(
+	session_selected,
 	config: dict,
 	session_string: str ,
 	 uri: str,
@@ -66,13 +77,14 @@ def ask_for_media_and_download(
 		
 		if len(messages) ==5:
 			if messages[4].text == "🚫El URI que enviaste es inválido":
-				logging.warning(f'Error. {uri} no valido')
+				logging.info(f'Error. {uri} no valido')
 				update_database(collection, uri, state = "ERROR", path = "Uri no valido")
 				return
 
 		if len(messages) == 6 :
 			#the media aparece en el sms 4 o el 5
 			index = 4 if messages[4]['audio'] else 5
+			print(messages[index])
 			logging.info(f'Media available. Title: {messages[index]["audio"]["title"]}')
 			no_media = False
 
@@ -82,7 +94,7 @@ def ask_for_media_and_download(
 			We can't permanently get message history cause an error raise up
 		'''
 		if end - start > 12:
-			logging.warning(f'Error. Timeout waiting available download for {uri}')
+			logging.info(f'Error. Timeout waiting available download for {uri}')
 			update_database(collection, uri, state = "ERROR", path = "Timeout (10s) for waiting available download")
 			return
 
@@ -104,27 +116,30 @@ def ask_for_media_and_download(
 		final_path = os.getcwd() + f'/audio/1{Path(download_path).name}'
 		logging.info("Media available at : " + final_path)
 		update_database(collection, uri, "OK", final_path)
+		print(f'{uri} by {session_selected}')
 		return
 
 	else:
 		update_database(collection, uri, state = "ERROR", path ="Error occur in media download ")
 		logging.info("Error during media download.")
 		return
+
+
 	return
 
 
-def set_session_state(config: dict, session_number: int):
+def set_session_state(config: dict, session_number: int, state : int):
 
 	#IF IT IS ZERO TURN TO ONE IF IT IS ONE TURN TO ZERO
 	''' Zero means free session One means bussy session'''
-	config[str(session_number)] = int ( not config[str(session_number)] )
+	config[str(session_number)] = state
 	
 	with open("config.json", "w") as cfile:
 		json.dump(config, cfile, indent = 3 )
 
 
 def single_download(uri: str):
-	logging.basicConfig(level = logging.INFO )
+	logging.basicConfig(level = logging.WARNING )
 
 	with open("config.json","r") as config_file:
 		config = json.load(config_file)
@@ -139,7 +154,7 @@ def single_download(uri: str):
 		with open(f'sessions/session{session_selected}.txt') as sfile:
 			session_string_selected = sfile.read()
 
-		path = ask_for_media_and_download(config, session_string_selected, uri)
+		path = ask_for_media_and_download(session_selected,session_selected,config, session_string_selected, uri)
 
 		#SET SESSION READY
 		set_session_state(config, session_selected)
@@ -147,7 +162,7 @@ def single_download(uri: str):
 		return path
 
 	else :
-		logging.warning("Can't download this song cause all API sessions are bussy")
+		logging.info("Can't download this song cause all API sessions are bussy")
 		return "Error. All single download API sessions are bussy"
 
 
@@ -160,7 +175,7 @@ def pending_uri(
 	'''	
 
 	uri_doc = collection.find_one({"state": "PENDING"},sort = [("priority",-1)])
-	print(uri_doc)
+
 	if uri_doc:
 		uri = uri_doc["uri"]
 		uri_doc_id = {"uri" : uri}
@@ -170,7 +185,7 @@ def pending_uri(
 	
 	else:
 		uri = None
-		logging.info("In loop, loocking for pending uri")
+		# logging.info("In loop, loocking for pending uri")
 	return uri
 
 
@@ -184,9 +199,35 @@ def update_database(
 	collection.update_one( {"uri" : uri } , field_to_update)
 
 
+def start_process(target, args):
+	process = multiprocessing.Process(target = target, args = args)
+	process.start()
+
+
+def download_task(
+	config: dict,  
+	session_selected: int,
+	uri: str
+	):
+
+	
+	client = pymongo.MongoClient(config['db_conection'])
+
+	collection = client[config['db_name']][config['collection_name']]
+
+	with open(f'sessions/session{session_selected}.txt') as sfile:
+		session_string_selected = sfile.read()
+
+	ask_for_media_and_download(session_selected,config, session_string_selected, uri,collection)
+				
+	#SET SESSION READY
+	set_session_state(config, session_selected, 0)
+
+
+
 #MAIN
 def singleDownload():
-	logging.basicConfig(level = logging.INFO )
+	logging.basicConfig(level = logging.WARNING )
 	logger = logging.getLogger("singleDownload")
 
 	with open("config.json","r") as config_file:
@@ -205,31 +246,18 @@ def singleDownload():
 		if session_free_list:
 			session_selected = random.choice(session_free_list)
 			logger.info(f'Session seleccionada: {session_selected}')
-		
 			uri = pending_uri(collection)
-			print(uri)
 			if uri:
-				
-				#SET SESSION BUSSY					
-				set_session_state(config, session_selected)
-
-				with open(f'sessions/session{session_selected}.txt') as sfile:
-					session_string_selected = sfile.read()
-
-				path = ask_for_media_and_download(config, session_string_selected, uri,collection)
-							
-				#SET SESSION READY
-				set_session_state(config, session_selected)
-
-
-			time.sleep(2)
-
-
-		condition = False	
+					#SET SESSION BUSSY					
+				set_session_state(config, session_selected, 1)
+				print(f'Session {session_selected}, uri {uri} {time.time()}')
+				start_process(target = download_task, args = [config,session_selected, uri])
+		time.sleep(2)
 
 
 if __name__ == "__main__":	
-	# print(single_download("spotify:track:1BLfQ6dPXmuDrFmbdfW7Jl"))
+	# erase()
+	# fill()
 	singleDownload()
 
 
@@ -245,11 +273,11 @@ Tareas:
 	*Hacer funcion que actualice la base de datos con los estados debidos x
 	*Instalar telegra desktop para checar envio de sms x
 	*Conectar con la base de datos de dayron (necesario descargar compass) x
-
+	*Llenar base de datos con path de la cancion descargada segun uri x
+	*Instalar compass y unirme a base de datos de servidor
+	*Probar con las diferentes sessiones la asincronia
 
 	*a;adir descarga asincronica por session
-	*Llenar base de datos con path de la cancion descargada segun uri
-	*Instalar compass y unirme a base de datos de servidor
 	() 
 	*Agregar validacion de la uri
 	*Agregar CCU sincrono
