@@ -262,6 +262,26 @@ if __name__ == "__main__":
 
 
 '''
+		import urllib.parse
+
+	    user = urllib.parse.quote_plus('lyra')
+        print(user)
+        password = urllib.parse.quote_plus('FE7PNKlm%q>
+        print(password)
+        myclient = pymongo.MongoClient(f'mongodb://{us>
+        db = myclient["sdown"]
+
+        https://open.spotify.com/track/4cktbXiXOapiLBMprHFErI?si=6b211a03992d42d3
+		https://open.spotify.com/track/4lejz024CsCP6S5kPD6Upb?si=ac43dfef99a44e78
+		https://open.spotify.com/track/03blI4F6MeYd6kJx26VsJ2?si=d4600b169ed94557
+		https://open.spotify.com/track/6PyFYTEo8X3inQ4hQvA8md?si=b3cdd95f7e3c4f90
+		https://open.spotify.com/track/0TDLuuLlV54CkRRUOahJb4?si=79bc160e9f4e45b9
+		https://open.spotify.com/track/3UN6cIn3VIyg0z1LCuFSum?si=7e82f583c23f4032	
+'''
+
+
+
+'''
 Tareas:
 	*Cambiar por session_string la conexion del cliente x (storage_sessions.py)
 	*Agregar seteo de estados del descagador x
@@ -276,7 +296,7 @@ Tareas:
 	*Llenar base de datos con path de la cancion descargada segun uri x
 	*Instalar compass y unirme a base de datos de servidor
 	*Probar con las diferentes sessiones la asincronia
-
+		Probar en server
 	*a;adir descarga asincronica por session
 	() 
 	*Agregar validacion de la uri

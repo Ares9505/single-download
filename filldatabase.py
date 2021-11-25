@@ -1,4 +1,7 @@
 import pymongo
+import random
+
+
 
 def fill():
   myclient = pymongo.MongoClient("mongodb://localhost:27017/") #conexion con el gestor de base de datos
@@ -7,15 +10,15 @@ def fill():
 
   mycollection= db["uri_state"]
 
-  x=mycollection.insert_many([
-    {"uri": "1BLfQ6dPXmuDrFmbdfW7Jl", "state": "PENDING", "path": "PENDING" , "priority": 42 },
-    {"uri": "3YBZIN3rekqsKxbJc9FZko", "state": "PENDING", "path": "PENDING" , "priority": 100 },
-    {"uri": "1OEoNpiyqBghuEUaT6Je6U", "state": "PENDING", "path": "PENDING" , "priority": 30 },
-    {"uri": "6eDImMU0RbxxTWqlEzpcom", "state": "PENDING", "path": "PENDING" , "priority": 22 },
-    {"uri": "6C62fl8x0vzwxPqay8twie", "state": "PENDING", "path": "PENDING" , "priority": 0 },
-    {"uri": "6C62fwie", "state": "PENDING", "path": "PENDING" , "priority": 400 }
-   
-    ])
+  lista = []
+
+  with open("uri.txt", "r")  as uri_file:
+    for uri in uri_file.readlines():
+      priority = random.randint(0,3)
+      lista.append({"uri": uri[0:-2], "state": "PENDING", "path": "PENDING" , "priority": priority })
+  
+
+  x = mycollection.insert_many(lista)
 
   print(myclient.list_database_names())
   print(db.list_collection_names())
