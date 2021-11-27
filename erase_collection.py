@@ -7,7 +7,7 @@ def erase():
 
 	db = myclient["mydatabase"]
 
-	mycollection= db["uri_state"]
+	mycollection= db["sesion_state"]
 
 	mycollection.drop()
 

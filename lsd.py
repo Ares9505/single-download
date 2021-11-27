@@ -10,8 +10,8 @@ import random
 import os
 import pymongo
 import multiprocessing
-from erase_collection import erase
-from filldatabase import fill
+from pyrogram.errors import FloodWait
+
 
 def check_free_sessions(client):
 	'''
@@ -42,12 +42,12 @@ def ask_for_media_and_download(
 
 	#TO SEE SESSION OWNER
 	logging.info(f'First_name {client.get_me().first_name}')
-
 	#CLEAN CHAT
 	'''
 		Avoid erase first 3 sms, it is the start bot indication
 	'''
 	messages = client.iter_history(chat_name, reverse = True)
+	print("bye bye")
 	for index,message in enumerate(messages):
 		if index > 2:
 			client.delete_messages(chat_name,message.message_id)
@@ -56,8 +56,6 @@ def ask_for_media_and_download(
 	sms = "/download spotify:track:" + uri
 	client.send_message(chat_name, sms)	
 
-	#LOOKING MESSAGES
-	messages = client.iter_history(chat_name, reverse = True)
 	
 	#GUARATEE MEDIA AVAILABLE
 	no_media = True
@@ -65,7 +63,7 @@ def ask_for_media_and_download(
 	while(no_media):
 		messages = client.iter_history(chat_name, reverse = True)
 		logging.info("Waiting for download available")
-		time.sleep(2)
+		time.sleep(9)
 		
 		if len(messages) ==5:
 			if messages[4].text == "🚫El URI que enviaste es inválido":
@@ -76,17 +74,22 @@ def ask_for_media_and_download(
 		if len(messages) == 6 :
 			#the media aparece en el sms 4 o el 5
 			index = 4 if messages[4]['audio'] else 5
-			logging.info(f'Media available. Title: {messages[index]["audio"]["title"]}')
-			no_media = False
+			if messages[index]['audio']:
+				logging.info(f'Media available. Title: {messages[index]["audio"]["title"]}')
+				no_media = False
+			else:
+				logging.error(f'This uri {uri} is not in Deezer database, it cannot be downloaded.')
+				update_database(collection, uri, state = "ERROR", path = f'This uri {uri} is not in Deezer database, it cannot be downloaded.')
+				return
 
 		end = time.time()
 		#MINIMUN TIME TO FIND SONG 
 		'''
 			We can't permanently get message history cause an error raise up
 		'''
-		if end - start > 12:
+		if end - start > 45:
 			logging.error(f'Error. Timeout waiting available download for {uri}')
-			update_database(collection, uri, state = "ERROR", path = "Timeout (10s) for waiting available download")
+			update_database(collection, uri, state = "ERROR", path = f'Timeout for waiting available download using session {session_selected}')
 			return
 
 	#DOWNLOAD SINGLE MEDIA
@@ -114,7 +117,7 @@ def ask_for_media_and_download(
 		update_database(collection, uri, state = "ERROR", path ="Error occur in media download ")
 		logging.error("Error during media download.")
 		return
-	update_database(collection, uri, state = "ERROR", path ="Error occur in media download ")
+
 
 	return
 
@@ -127,33 +130,6 @@ def set_session_state(client, session: int, state : int):
 	field_to_update = {"$set" : {"state": state}}
 	session_collection.update_one( {"session" : session } , field_to_update)
 
-def single_download(uri: str):
-	logging.basicConfig(level = logging.WARNING )
-
-	with open("config.json","r") as config_file:
-		config = json.load(config_file)
-
-	if check_free_sessions():
-		session_selected = random.choice(check_free_sessions())
-		print(f'Session seleccionada: {session_selected}')
-		
-		#SET SESSION BUSSY
-		set_session_state(config, session_selected)
-		
-		with open(f'sessions/session{session_selected}.txt') as sfile:
-			session_string_selected = sfile.read()
-
-		path = ask_for_media_and_download(session_selected,session_selected,config, session_string_selected, uri)
-
-		#SET SESSION READY
-		set_session_state(config, session_selected)
-
-		return path
-
-	else :
-		logging.info("Can't download this song cause all API sessions are bussy")
-		return "Error. All single download API sessions are bussy"
-
 
 def pending_uri(
 	collection: pymongo.collection.Collection
@@ -162,7 +138,6 @@ def pending_uri(
 		*Extract doc with mayor priority and state equal pending 
 		*Update doc extracted with state =  Procesing
 	'''	
-
 	uri_doc = collection.find_one({"state": "PENDING"},sort = [("priority",-1)])
 
 	if uri_doc:
@@ -198,7 +173,6 @@ def download_task(
 	session_selected: int,
 	uri: str
 	):
-
 	
 	client = pymongo.MongoClient(config['db_conection'])
 
@@ -206,12 +180,18 @@ def download_task(
 
 	with open(f'sessions/session{session_selected}.txt') as sfile:
 		session_string_selected = sfile.read()
-
-	ask_for_media_and_download(config, session_string_selected, uri,collection,session_selected)
-				
+	
+	try:
+		ask_for_media_and_download(config, session_string_selected, uri,collection,session_selected)	
+	
+	except FloodWait as e:
+		logging.error(f'FloodWait ocurr with the session {session_selected} and uri {uri}.\n {uri} set to PENDING')
+		update_database(collection = collection, uri = uri, state = "PENDING" , path="PENDING")
+		set_session_state(client ,session_selected, 2)
+		time.sleep(25500)
 	#SET SESSION READY
 	set_session_state(client ,session_selected, 0)
-
+	client
 
 
 #MAIN
@@ -245,38 +225,7 @@ def singleDownload():
 
 
 if __name__ == "__main__":	
-	# erase()
-	# fill()
 	singleDownload()
-
-	# with open("config.json","r") as config_file:
-	# 	config = json.load(config_file)
-
-	# client = pymongo.MongoClient(config['db_conection'])
-
-	# free_sessions = check_free_sessions(client)	
-	# session_selected = random.choice(free_sessions)
-	# set_session_state(client = client, session= session_selected,state = 1)
-
-
-'''
-		import urllib.parse
-
-	    user = urllib.parse.quote_plus('lyra')
-        print(user)
-        password = urllib.parse.quote_plus('FE7PNKlm%q>
-        print(password)
-        myclient = pymongo.MongoClient(f'mongodb://{us>
-        db = myclient["sdown"]
-
-        https://open.spotify.com/track/4cktbXiXOapiLBMprHFErI?si=6b211a03992d42d3
-		https://open.spotify.com/track/4lejz024CsCP6S5kPD6Upb?si=ac43dfef99a44e78
-		https://open.spotify.com/track/03blI4F6MeYd6kJx26VsJ2?si=d4600b169ed94557
-		https://open.spotify.com/track/6PyFYTEo8X3inQ4hQvA8md?si=b3cdd95f7e3c4f90
-		https://open.spotify.com/track/0TDLuuLlV54CkRRUOahJb4?si=79bc160e9f4e45b9
-		https://open.spotify.com/track/3UN6cIn3VIyg0z1LCuFSum?si=7e82f583c23f4032	
-'''
-
 
 
 '''
@@ -293,17 +242,18 @@ Tareas:
 	*Conectar con la base de datos de dayron (necesario descargar compass) x
 	*Llenar base de datos con path de la cancion descargada segun uri x
 	*Instalar compass y unirme a base de datos de servidor X
-	*Cambiar setear estado de base de datos x
+	*agregar setear estado de base de datos x
 
 	*Probar con las diferentes sessiones la asincronia
 		Probar en server X (No sirvio asincronia con lectura de txt se va a probar cpn mongdb)
 	*a;adir descarga asincronica por session
 	() 
 
-	*Agregar validacion de la uri
-	*Agregar CCU sincrono
 	
 Notas:
 	*Se debe cambiar en configuracion en config.json y poner la direccion para la conexion con la base de  datos,
-	el nobre de la base de datos y la conexion a la hora de integrar con rey
+	el nombre de la base de datos y la conexion a la hora de integrar con rey
+	*Recomendacion para manejo de foolwait exception https://docs.pyrogram.org/start/errors
+
 '''
+https://t.me/spotify_bot_updates

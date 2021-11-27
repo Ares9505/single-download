@@ -5,11 +5,7 @@
    "db_name": "mydatabase",
    "collection_name": "uri_state",
    "session quantity": 7,
-   "1": 1,
-   "2": 1,
-   "3": 1,
-   "4": 1,
-   "5": 1,
-   "6": 0,
-   "7": 1
+   "get_history_time": 9,
+   "download_wait_time": 45,
+   "7": 0
 }

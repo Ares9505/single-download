@@ -10,15 +10,15 @@ import random
 import os
 import pymongo
 import multiprocessing
-from erase_collection import erase
-from filldatabase import fill
+from pyrogram.errors import FloodWait
 
-def check_free_sessions(client):
+
+def check_free_sessions(config,client):
 	'''
 	Query sesion collection from database to check for free sessions
 	'''
 	while True:
-		session_collection = client['mydatabase']['sesion_state']
+		session_collection = client[config['db_name']]['sesion_state']
 		free_sessions_coll = session_collection.find({"state" : 0},{"session":1})
 		free_sessions = [item['session'] for item in free_sessions_coll]	
 
@@ -42,22 +42,20 @@ def ask_for_media_and_download(
 
 	#TO SEE SESSION OWNER
 	logging.info(f'First_name {client.get_me().first_name}')
-
 	#CLEAN CHAT
 	'''
 		Avoid erase first 3 sms, it is the start bot indication
 	'''
 	messages = client.iter_history(chat_name, reverse = True)
+
 	for index,message in enumerate(messages):
-		if index > 2:
+		if index > 1:
 			client.delete_messages(chat_name,message.message_id)
 
 	# #SENDING URI
 	sms = "/download spotify:track:" + uri
 	client.send_message(chat_name, sms)	
 
-	#LOOKING MESSAGES
-	messages = client.iter_history(chat_name, reverse = True)
 	
 	#GUARATEE MEDIA AVAILABLE
 	no_media = True
@@ -65,28 +63,36 @@ def ask_for_media_and_download(
 	while(no_media):
 		messages = client.iter_history(chat_name, reverse = True)
 		logging.info("Waiting for download available")
-		time.sleep(2)
-		
-		if len(messages) ==5:
-			if messages[4].text == "🚫El URI que enviaste es inválido":
+		time.sleep(config["get_history_time"])
+
+		for index,message in enumerate(messages):
+			print(index, message.text)
+
+		if len(messages) == 4:
+			if messages[3].text == "🚫El URI que enviaste es inválido":
 				logging.error(f'Error. {uri} no valido')
 				update_database(collection, uri, state = "ERROR", path = "Uri no valido")
 				return
 
-		if len(messages) == 6 :
+		if len(messages) == 5 :
 			#the media aparece en el sms 4 o el 5
-			index = 4 if messages[4]['audio'] else 5
-			logging.info(f'Media available. Title: {messages[index]["audio"]["title"]}')
-			no_media = False
+			index = 3 if messages[3]['audio'] else 4
+			if messages[index]['audio']:
+				logging.info(f'Media available. Title: {messages[index]["audio"]["title"]}')
+				no_media = False
+			else:
+				logging.error(f'Uri is not in Deezer database, it cannot be downloaded.')
+				update_database(collection, uri, state = "ERROR", path = f'This uri {uri} is not in Deezer database, it cannot be downloaded.')
+				return
 
 		end = time.time()
 		#MINIMUN TIME TO FIND SONG 
 		'''
 			We can't permanently get message history cause an error raise up
 		'''
-		if end - start > 12:
+		if end - start > config["download_wait_time"]:
 			logging.error(f'Error. Timeout waiting available download for {uri}')
-			update_database(collection, uri, state = "ERROR", path = "Timeout (10s) for waiting available download")
+			update_database(collection, uri, state = "ERROR", path = f'Timeout for waiting available download using session {session_selected}')
 			return
 
 	#DOWNLOAD SINGLE MEDIA
@@ -103,10 +109,10 @@ def ask_for_media_and_download(
 				download_path = None
 
 	if download_path:
-		shutil.move(download_path,f'audio/1{Path(download_path).name}')
-		final_path = os.getcwd() + f'/audio/1{Path(download_path).name}'
-		logging.info("Media available at : " + final_path)
-		update_database(collection, uri, "OK", final_path)
+		# shutil.move(download_path,f'audio/1{Path(download_path).name}')
+		# final_path = os.getcwd() + f'/audio/1{Path(download_path).name}'
+		# logging.info("Media available at : " + final_path)
+		# update_database(collection, uri, "OK", final_path)
 		print(f'{uri} by {session_selected}')
 		return
 
@@ -114,45 +120,18 @@ def ask_for_media_and_download(
 		update_database(collection, uri, state = "ERROR", path ="Error occur in media download ")
 		logging.error("Error during media download.")
 		return
-	update_database(collection, uri, state = "ERROR", path ="Error occur in media download ")
+
 
 	return
 
 
-def set_session_state(client, session: int, state : int):
+def set_session_state(config, client, session: int, state : int):
 
 	#IF IT IS ZERO TURN TO ONE IF IT IS ONE TURN TO ZERO
 	''' Zero means free session One means bussy session'''
-	session_collection = client['mydatabase']['sesion_state']
+	session_collection = client[config['db_name']]['sesion_state']
 	field_to_update = {"$set" : {"state": state}}
 	session_collection.update_one( {"session" : session } , field_to_update)
-
-def single_download(uri: str):
-	logging.basicConfig(level = logging.WARNING )
-
-	with open("config.json","r") as config_file:
-		config = json.load(config_file)
-
-	if check_free_sessions():
-		session_selected = random.choice(check_free_sessions())
-		print(f'Session seleccionada: {session_selected}')
-		
-		#SET SESSION BUSSY
-		set_session_state(config, session_selected)
-		
-		with open(f'sessions/session{session_selected}.txt') as sfile:
-			session_string_selected = sfile.read()
-
-		path = ask_for_media_and_download(session_selected,session_selected,config, session_string_selected, uri)
-
-		#SET SESSION READY
-		set_session_state(config, session_selected)
-
-		return path
-
-	else :
-		logging.info("Can't download this song cause all API sessions are bussy")
-		return "Error. All single download API sessions are bussy"
 
 
 def pending_uri(
@@ -162,7 +141,6 @@ def pending_uri(
 		*Extract doc with mayor priority and state equal pending 
 		*Update doc extracted with state =  Procesing
 	'''	
-
 	uri_doc = collection.find_one({"state": "PENDING"},sort = [("priority",-1)])
 
 	if uri_doc:
@@ -198,7 +176,6 @@ def download_task(
 	session_selected: int,
 	uri: str
 	):
-
 	
 	client = pymongo.MongoClient(config['db_conection'])
 
@@ -206,17 +183,24 @@ def download_task(
 
 	with open(f'sessions/session{session_selected}.txt') as sfile:
 		session_string_selected = sfile.read()
-
-	ask_for_media_and_download(config, session_string_selected, uri,collection,session_selected)
-				
+	
+	#try:
+	ask_for_media_and_download(config, session_string_selected, uri,collection,session_selected)	
+	
+#	except FloodWait as e:
+#		logging.error(f'FloodWait ocurr with the session {session_selected} and uri {uri}.\n {uri} set to PENDING')
+#		update_database(collection = collection, uri = uri, state = "PENDING" , path="PENDING")
+#		set_session_state(config, client ,session_selected, 2)
+#		time.sleep(25500)
+#		return
 	#SET SESSION READY
-	set_session_state(client ,session_selected, 0)
+	set_session_state(config, client ,session_selected, 0)
 
 
 
 #MAIN
 def singleDownload():
-	logging.basicConfig(level = logging.WARNING )
+	logging.basicConfig(level = logging.INFO )
 	logger = logging.getLogger("singleDownload")
 
 	with open("config.json","r") as config_file:
@@ -232,51 +216,20 @@ def singleDownload():
 	condition =True		
 	while condition:
 		#check_free_session wait for a free session in a loop
-		session_free_list = check_free_sessions(client)
+		session_free_list = check_free_sessions(config, client)
 		session_selected = random.choice(session_free_list)
 		logger.info(f'Session seleccionada: {session_selected}')
 		uri = pending_uri(collection)
 		if uri:
 				#SET SESSION BUSSY					
-			set_session_state(client, session_selected, 1)
+			set_session_state(config, client, session_selected, 1)
 			print(f'Session {session_selected}, uri {uri} {time.time()}')
 			start_process(target = download_task, args = [config,session_selected, uri])
 
 
 
 if __name__ == "__main__":	
-	# erase()
-	# fill()
 	singleDownload()
-
-	# with open("config.json","r") as config_file:
-	# 	config = json.load(config_file)
-
-	# client = pymongo.MongoClient(config['db_conection'])
-
-	# free_sessions = check_free_sessions(client)	
-	# session_selected = random.choice(free_sessions)
-	# set_session_state(client = client, session= session_selected,state = 1)
-
-
-'''
-		import urllib.parse
-
-	    user = urllib.parse.quote_plus('lyra')
-        print(user)
-        password = urllib.parse.quote_plus('FE7PNKlm%q>
-        print(password)
-        myclient = pymongo.MongoClient(f'mongodb://{us>
-        db = myclient["sdown"]
-
-        https://open.spotify.com/track/4cktbXiXOapiLBMprHFErI?si=6b211a03992d42d3
-		https://open.spotify.com/track/4lejz024CsCP6S5kPD6Upb?si=ac43dfef99a44e78
-		https://open.spotify.com/track/03blI4F6MeYd6kJx26VsJ2?si=d4600b169ed94557
-		https://open.spotify.com/track/6PyFYTEo8X3inQ4hQvA8md?si=b3cdd95f7e3c4f90
-		https://open.spotify.com/track/0TDLuuLlV54CkRRUOahJb4?si=79bc160e9f4e45b9
-		https://open.spotify.com/track/3UN6cIn3VIyg0z1LCuFSum?si=7e82f583c23f4032	
-'''
-
 
 
 '''
@@ -293,17 +246,26 @@ Tareas:
 	*Conectar con la base de datos de dayron (necesario descargar compass) x
 	*Llenar base de datos con path de la cancion descargada segun uri x
 	*Instalar compass y unirme a base de datos de servidor X
-	*Cambiar setear estado de base de datos x
+	*agregar setear estado de base de datos x
 
 	*Probar con las diferentes sessiones la asincronia
 		Probar en server X (No sirvio asincronia con lectura de txt se va a probar cpn mongdb)
 	*a;adir descarga asincronica por session
 	() 
 
-	*Agregar validacion de la uri
-	*Agregar CCU sincrono
 	
 Notas:
 	*Se debe cambiar en configuracion en config.json y poner la direccion para la conexion con la base de  datos,
-	el nobre de la base de datos y la conexion a la hora de integrar con rey
+	el nombre de la base de datos y la conexion a la hora de integrar con rey
+	*Recomendacion para manejo de foolwait exception https://docs.pyrogram.org/start/errors
+
+Sessiones:
+	1 dariel
+	2 elisabeth
+	3 ale
+	4 
+	5
+	6 naty
+	7 Dayron
 '''
+
