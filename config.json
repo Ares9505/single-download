@@ -7,5 +7,6 @@
    "session quantity": 7,
    "get_history_time": 9,
    "download_wait_time": 45,
-   "7": 0
+   "flood_avoid_time": 60,
+   "downloads_limit": 120
 }

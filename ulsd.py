@@ -11,11 +11,11 @@ import os
 import pymongo
 import multiprocessing
 from pyrogram.errors import FloodWait
-
+import datetime
 
 def check_free_sessions(config,client):
 	'''
-	Query sesion collection from database to check for free sessions
+	Query sesion_state collection from sdown database for free sessions
 	'''
 	while True:
 		session_collection = client[config['db_name']]['sesion_state']
@@ -32,6 +32,16 @@ def ask_for_media_and_download(
 	 uri: str,
 	 collection: pymongo.collection.Collection,
 	 session_selected):	
+	'''
+		*Start telegram client for a given session, show the owner name
+		*Delete old messages except the star bot message
+		*Send message with given uri
+		*wait for media available 
+			*Ask 'every get_history_time' for chat history
+			*If response bot message is uri no valid set error state in uri
+			*If response bot message is not in Dazzer set error state in uri
+			*If exceed 'download_time_wait' set error state in uri 
+	'''
 
 	#BOT CHAT NAME 
 	chat_name = "spotify_down_bot" # access only via web
@@ -42,14 +52,12 @@ def ask_for_media_and_download(
 
 	#TO SEE SESSION OWNER
 	logging.info(f'First_name {client.get_me().first_name}')
+	
 	#CLEAN CHAT
-	'''
-		Avoid erase first 3 sms, it is the start bot indication
-	'''
 	messages = client.iter_history(chat_name, reverse = True)
 
 	for index,message in enumerate(messages):
-		if index > 1:
+		if index > 0:
 			client.delete_messages(chat_name,message.message_id)
 
 	# #SENDING URI
@@ -57,26 +65,27 @@ def ask_for_media_and_download(
 	client.send_message(chat_name, sms)	
 
 	
-	#GUARATEE MEDIA AVAILABLE
+	#WAIT FOR MEDIA AVAILABLE
 	no_media = True
 	start = time.time()
 	while(no_media):
-		messages = client.iter_history(chat_name, reverse = True)
 		logging.info("Waiting for download available")
 		time.sleep(config["get_history_time"])
+		messages = client.iter_history(chat_name, reverse = True)
 
 		for index,message in enumerate(messages):
 			print(index, message.text)
 
-		if len(messages) == 4:
-			if messages[3].text == "🚫El URI que enviaste es inválido":
+		if len(messages) == 3:
+			text = messages[2].text 
+			if "🚫" in text:
 				logging.error(f'Error. {uri} no valido')
 				update_database(collection, uri, state = "ERROR", path = "Uri no valido")
 				return
 
-		if len(messages) == 5 :
-			#the media aparece en el sms 4 o el 5
-			index = 3 if messages[3]['audio'] else 4
+		if len(messages) == 4 :
+			#the media aparece en el sms 2 o el 3
+			index = 2 if messages[2]['audio'] else 3
 			if messages[index]['audio']:
 				logging.info(f'Media available. Title: {messages[index]["audio"]["title"]}')
 				no_media = False
@@ -100,8 +109,24 @@ def ask_for_media_and_download(
 		try:
 			time.sleep(2)
 			download_path = client.download_media(messages[index]['audio'])
+			
+			# ## To test without download
+			# time.sleep(3)
+			# download_path = "Some test path"
+			# ##
+
 			logging.info("Downloading media")
 			break
+
+		except FloodWait as e:
+			logging.error(f'FloodWait ocurr with the session {session_selected} and uri {uri}.\n {uri} set to PENDING')
+			update_database(collection = collection, uri = uri, state = "PENDING" , path="PENDING")
+			set_session_state(config, client ,session_selected, 2)
+			current_date = datetime.datetime.now()
+			with open("floodTime.txt","a") as ftfile:
+				ftfile.write(f'Flood time {e.x} seconds by session {session_selected} at {current_date}\n')
+			time.sleep(e.x)
+		
 		except:
 			logging.info(f'Attemp {i+1} to download media')
 			if i + 1 == 3:
@@ -109,10 +134,15 @@ def ask_for_media_and_download(
 				download_path = None
 
 	if download_path:
-		# shutil.move(download_path,f'audio/1{Path(download_path).name}')
-		# final_path = os.getcwd() + f'/audio/1{Path(download_path).name}'
-		# logging.info("Media available at : " + final_path)
-		# update_database(collection, uri, "OK", final_path)
+		shutil.move(download_path,f'audio/1{Path(download_path).name}')
+		final_path = os.getcwd() + f'/audio/1{Path(download_path).name}'
+		logging.info("Media available at : " + final_path)
+
+		# ## To test wituout download
+		# final_path = download_path
+		# ##
+
+		update_database(collection, uri, "OK", final_path)
 		print(f'{uri} by {session_selected}')
 		return
 
@@ -127,8 +157,6 @@ def ask_for_media_and_download(
 
 def set_session_state(config, client, session: int, state : int):
 
-	#IF IT IS ZERO TURN TO ONE IF IT IS ONE TURN TO ZERO
-	''' Zero means free session One means bussy session'''
 	session_collection = client[config['db_name']]['sesion_state']
 	field_to_update = {"$set" : {"state": state}}
 	session_collection.update_one( {"session" : session } , field_to_update)
@@ -141,19 +169,18 @@ def pending_uri(
 		*Extract doc with mayor priority and state equal pending 
 		*Update doc extracted with state =  Procesing
 	'''	
-	uri_doc = collection.find_one({"state": "PENDING"},sort = [("priority",-1)])
+	logging.info("Loocking your pending uri...")
+	while True:
+		uri_doc = collection.find_one({"state": "PENDING"},sort = [("priority",-1)])
 
-	if uri_doc:
-		uri = uri_doc["uri"]
-		uri_doc_id = {"uri" : uri}
-		field_to_update = {"$set" : {"state": "PROCESING"}}
-		collection.update_one( uri_doc_id, field_to_update)
-		logging.info(f'Uri {uri} is being processed')
+		if uri_doc:
+			uri = uri_doc["uri"]
+			uri_doc_id = {"uri" : uri}
+			field_to_update = {"$set" : {"state": "PROCESING"}}
+			collection.update_one( uri_doc_id, field_to_update)
+			logging.info(f'Uri {uri} is being processed')
+			return uri		
 	
-	else:
-		uri = None
-		# logging.info("In loop, loocking for pending uri")
-	return uri
 
 
 def update_database(
@@ -178,25 +205,77 @@ def download_task(
 	):
 	
 	client = pymongo.MongoClient(config['db_conection'])
-
 	collection = client[config['db_name']][config['collection_name']]
-
 	with open(f'sessions/session{session_selected}.txt') as sfile:
 		session_string_selected = sfile.read()
 	
-	#try:
-	ask_for_media_and_download(config, session_string_selected, uri,collection,session_selected)	
-	
-#	except FloodWait as e:
-#		logging.error(f'FloodWait ocurr with the session {session_selected} and uri {uri}.\n {uri} set to PENDING')
-#		update_database(collection = collection, uri = uri, state = "PENDING" , path="PENDING")
-#		set_session_state(config, client ,session_selected, 2)
-#		time.sleep(25500)
-#		return
+
+	#FLOODWAIT ERROR HAPPEND CAUSE A REPEATED GET HISTORY ACTION IN ask_for_media_download FUNCTION
+		#Logs for flood time ocurrence apear in FloodTime.txt 
+	try:
+		ask_for_media_and_download(config, session_string_selected, uri,collection,session_selected)
+
+	except FloodWait as e:
+		logging.error(f'FloodWait ocurr with the session {session_selected} and uri {uri}.\n {uri} set to PENDING')
+		update_database(collection = collection, uri = uri, state = "PENDING" , path="PENDING")
+		set_session_state(config, client ,session_selected, 2)
+		current_date = datetime.datetime.now()
+		with open("floodTime.txt","a") as ftfile:
+			ftfile.write(f'Flood time {e.x} seconds by session {session_selected} at {current_date}\n')
+		time.sleep(e.x)
+		return
+
+	#CHECK DOWNLOAD REACH LIMIT FOR SESSION:
+	#check_download_limit_by_session(config = config, session_selected = session_selected, client = client)
+
+	#AWAIT RANDOM TIME
+	logging.info(f'Session {session_selected} awaiting 40 - 60 seconds after download')
+	await_random_time()
+
 	#SET SESSION READY
 	set_session_state(config, client ,session_selected, 0)
 
+def await_random_time():
+	stime = random.randint(40,60)
+	time.sleep(stime)
 
+def check_download_limit_by_session(config, session_selected, client):
+	'''
+		*From session_state collection increase the downloads numbers of a particular session
+		*If the download is higher the download limit by session the session operation will be paused a flood_avoid_time
+	'''
+	collection = client[config['db_name']]['sesion_state']
+	collection.update_one({"session" : session_selected}, { "$inc" : {"downloads": 1 }})
+	downloads = collection.find_one({"session": session_selected},{"downloads": 1})
+	logging.warning(f'Number of downloads by session {session_selected}')
+	
+	if downloads['downloads'] > config['downloads_limit']:
+		collection.update_one({"session" : session_selected}, { "$set" : {"state": 3, "downloads": 0 }})#wait state
+		logging.warning(f'Session {session_selected} stop for avoid Flood time')
+		time.sleep(config['flood_avoid_time'])
+	return	
+
+'''
+	Modificar:
+	*Annadir en sesion_state el campo downloads para cada session X
+	*Annadir download_wait y flood_avoid_time a config.json X
+'''
+
+
+
+def test():
+	logging.basicConfig(level = logging.INFO )
+	logger = logging.getLogger("singleDownload")
+
+	with open("config.json","r") as config_file:
+		config = json.load(config_file)
+
+
+	logger.info("Connecting to MongoDB...")
+
+	client = pymongo.MongoClient(config['db_conection'])
+	for i in range(0,100):
+		check_download_limit_by_session(config = config , session_selected = 1, client = client)
 
 #MAIN
 def singleDownload():
@@ -212,7 +291,7 @@ def singleDownload():
 	client = pymongo.MongoClient(config['db_conection'])
 
 	collection = client[config['db_name']][config['collection_name']]			
-
+	cant = 0
 	condition =True		
 	while condition:
 		#check_free_session wait for a free session in a loop
@@ -225,12 +304,14 @@ def singleDownload():
 			set_session_state(config, client, session_selected, 1)
 			print(f'Session {session_selected}, uri {uri} {time.time()}')
 			start_process(target = download_task, args = [config,session_selected, uri])
-
+			cant +=1
+			print(cant)
 
 
 if __name__ == "__main__":	
-	singleDownload()
-
+	#singleDownload()
+	#test()
+	await_random_time()
 
 '''
 Tareas:
@@ -239,33 +320,46 @@ Tareas:
 	*Crear y llenar base de datos de prueba  x
 	*Consulta a base de datos para ver si hay uris pendientes y extraer la de mayor prioridad x
 	*Descargar uri pendiente si hay alguna sesion desocupada x
-	*Tener en cuenta uri con dos medias para descargar (Esto no ocurre nunca)
+	*Tener en cuenta uri con dos medias para descargar (Esto no ocurre nunca) X
 	*Establecer lazo while true para que se chequee eternamente la base de  datos x
 	*Hacer funcion que actualice la base de datos con los estados debidos x
 	*Instalar telegra desktop para checar envio de sms x
-	*Conectar con la base de datos de dayron (necesario descargar compass) x
+	*Conectar con la base de datos de serer (necesario descargar compass) x
 	*Llenar base de datos con path de la cancion descargada segun uri x
 	*Instalar compass y unirme a base de datos de servidor X
 	*agregar setear estado de base de datos x
-
-	*Probar con las diferentes sessiones la asincronia
+	*Probar con las diferentes sessiones la asincronia X
 		Probar en server X (No sirvio asincronia con lectura de txt se va a probar cpn mongdb)
-	*a;adir descarga asincronica por session
-	() 
-
+	*Annadir descarga asincronica por session usando mongodb collection session_state X
+	*Cambiar en configuracion en config.json y poner la direccion para la conexion con la base de  datos,
+	el nombre de la base de datos X
+	*Agregar manejo de error cuand no esta en dezzer database X
+	*Agregar manejo de flood wait error X
+	*Agregar control sobre canciones descargadas por session para evitar flood wait X
+	*Probar en el servidor para una sola session 
+		*Agregar campo downloads a session d
+		*Agregar llaves a config.json
+	
+Pruebas realizadas:
+*que se pare cada 120 canciones 60 seg X flodd wait a las 66 descargas
+*que se pare cada 60 canciones 60 seg X flood wait en la 3era vuelta 154 descargas
+(se incrementa el tiempo de flood wait respecto al flood wait anterior)
+*Prueba aislada para ver cuantos get history se pueden hace cada 3 segundaos ()
+*que espere de 10 - 40  seg para descargar entre cancion y cancion con una sola session
 	
 Notas:
-	*Se debe cambiar en configuracion en config.json y poner la direccion para la conexion con la base de  datos,
-	el nombre de la base de datos y la conexion a la hora de integrar con rey
 	*Recomendacion para manejo de foolwait exception https://docs.pyrogram.org/start/errors
+	
+	*Se annadi flood wait a intento de descarga
 
 Sessiones:
 	1 dariel
 	2 elisabeth
 	3 ale
-	4 
-	5
+	4 sherry
+	5 key
 	6 naty
 	7 Dayron
+	8 Mama
 '''
 

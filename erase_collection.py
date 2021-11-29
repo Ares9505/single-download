@@ -1,3 +1,4 @@
+
 import pymongo
 import os 
 import shutil
@@ -7,7 +8,7 @@ def erase():
 
 	db = myclient["mydatabase"]
 
-	mycollection= db["sesion_state"]
+	mycollection= db["uri_state"]
 
 	mycollection.drop()
 

@@ -49,14 +49,14 @@ def use_session_string(session_number):
 	client.start()
 
 	print(client.get_me().first_name)
-	# messages = client.iter_history("@Ares9505")
-	# for m in messages:
-	# 	print(m.text)	
+	messages = client.iter_history("spotify_down_bot")
+	for m in messages:
+		print(m.text)	
 	client.stop()
 
 if __name__ == "__main__":
-	storage_session_data(old_session = False)
-	#use_session_string(5)
+	#storage_session_data(old_session = False)
+	use_session_string(1)
 
 '''
 	Tareas:
